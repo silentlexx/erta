@@ -1,2 +1,2 @@
 # erta
-EggRider Trip Analyzer
+EggRider Trip Analyzer (Streamlit App)
