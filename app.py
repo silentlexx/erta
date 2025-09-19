@@ -3,10 +3,60 @@ import matplotlib.pyplot as plt
 import folium
 import streamlit as st
 import numpy as np
-from math import radians, sin, cos, sqrt, atan2
+from streamlit.components.v1 import html
 
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
+
+def fullscreen_html(html_code):
+    return """
+            <style>
+            .st-btn {
+                background-color: #fff;
+                color: #000;
+                border: 2px solid rgba(0, 0, 0, 0.2);
+                border-radius: 2px;
+                text-align: center;
+                font-size: 22px;
+                cursor: pointer;
+                width: 40px;
+                height: 40px;
+                font-weight: bold;
+                line-height: 28px;
+                position: absolute;
+                z-index: 9999;
+                right: 15px;
+                top: 15px;
+            }
+            .st-btn:hover {
+                background-color: #f0f2f6;
+                border-color: #c0c0c0;
+            }
+            </style>
+            <button class="st-btn" onclick="openFullscreen()">&#x26F6;</button>
+            <div id="map-container" style="width:100%; height:400px; background:lightblue; text-align:center; line-height:400px;">
+                """ + html_code + """
+            </div>
+            <script>
+            function openFullscreen() {
+            var elem = document.getElementById("map-container");
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.mozRequestFullScreen) { /* Firefox */
+                elem.mozRequestFullScreen();
+            } else if (elem.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { /* IE/Edge */
+                elem.msRequestFullscreen();
+            }
+            }
+            </script>
+            """
+
+
+# ----------------------------
+# UI
+# ----------------------------
 
 uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 
@@ -63,9 +113,7 @@ if uploaded_file:
             folium.Marker(coords[0], tooltip="Start").add_to(trip_map)
             folium.Marker(coords[-1], tooltip="End").add_to(trip_map)
 
-            map_html = "trip_map.html"
-            trip_map.save(map_html)
-            st.components.v1.html(open(map_html, "r", encoding="utf-8").read(), height=600)
+            html(fullscreen_html(trip_map._repr_html_()), height=600)
 
     # ============= SPEED + POWER ==================
     with tabs[2]:
