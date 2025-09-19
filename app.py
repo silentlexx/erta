@@ -5,7 +5,7 @@ import streamlit as st
 import numpy as np
 from math import radians, sin, cos, sqrt, atan2
 
-# Haversine distance у км
+# Haversine distance in km
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371.0  # km
     dlat = radians(lat2 - lat1)
@@ -18,23 +18,23 @@ def clean_gps(df, lat_col="Latitude", lon_col="Longitude", time_col="Time(HH:mm:
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
     df = df.dropna(subset=[time_col])
 
-    mask = [True]  # перша точка завжди ок
+    mask = [True]  # first point is always ok
     for i in range(1, len(df)):
         lat1, lon1 = df.iloc[i-1][[lat_col, lon_col]]
         lat2, lon2 = df.iloc[i][[lat_col, lon_col]]
         t1, t2 = df.iloc[i-1][time_col], df.iloc[i][time_col]
-        dt = (t2 - t1).total_seconds() / 3600.0  # години
+        dt = (t2 - t1).total_seconds() / 3600.0  # hours
 
         if dt <= 0:
             mask.append(False)
             continue
 
-        dist = haversine(lat1, lon1, lat2, lon2)  # км
+        dist = haversine(lat1, lon1, lat2, lon2)  # km
         speed = dist / dt if dt > 0 else 0
 
         if speed > max_speed:
-            print(f"Відсікаємо точку {i} (скачок {dist:.2f} км за {dt*60:.1f} хв со скоростью {speed:.1f} км/ч)") 
-            mask.append(False)  # відсікаємо «скачок»
+            print(f"Skipping point {i} (jump {dist:.2f} km in {dt*60:.1f} min at speed {speed:.1f} km/h)") 
+            mask.append(False)  # skip "jump"
         else:
             mask.append(True)
 
@@ -43,20 +43,20 @@ def clean_gps(df, lat_col="Latitude", lon_col="Longitude", time_col="Time(HH:mm:
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
 
-uploaded_file = st.file_uploader("Завантажте CSV з Eggrider", type=["csv"])
+uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 
 if uploaded_file:
-    # читаємо CSV
+    # read CSV
     df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
 
     min_dist = float(df["Distance(km)"].min())
     max_dist = float(df["Distance(km)"].max())
 
     dist_range = st.slider(
-        "Виберіть діапазон дистанції (км)",
+        "Select distance range (km)",
         min_value=min_dist,
         max_value=max_dist,
-        value=(min_dist, max_dist),  # початково весь маршрут
+        value=(min_dist, max_dist),  # initially full route
         step=0.1
     )
 
@@ -65,29 +65,29 @@ if uploaded_file:
         (df["Distance(km)"] <= dist_range[1])
     ]
 
-    # створюємо вкладки
+    # create tabs
     tabs = st.tabs([
-        "📊 Дані",
-        "🛣️ Маршрут",
-        "⚡ Швидкість та Потужність",
-        "🔋 Напруга та Струм",
-        "📈 Рівень підтримки",
+        "📊 Data",
+        "🛣️ Route",
+        "⚡ Speed & Power",
+        "🔋 Voltage & Current",
+        "📈 Assist Level",
     ])
 
-    # ============= ДАННІ ==================
+    # ============= DATA ==================
     with tabs[0]:
-        st.subheader("📊 Дані")
+        st.subheader("📊 Data")
         st.dataframe(df)
 
-        # координати
+        # coordinates
         lat_col, lon_col = "Latitude", "Longitude"
         df = df.dropna(subset=[lat_col, lon_col])
-        st.write(f"Знайдено {len(df)} координатних точок.")
+        st.write(f"Found {len(df)} coordinate points.")
 
 
-    # ============= МАРШРУТ ==================
+    # ============= ROUTE ==================
     with tabs[1]:
-        st.subheader("🗺️ Маршрут на карті")
+        st.subheader("🗺️ Route on map")
         if not df.empty:
             df_clean = df #clean_gps(df) 
             start_coords = (df_clean[lat_col].iloc[0], df[lon_col].iloc[0])
@@ -102,56 +102,56 @@ if uploaded_file:
             trip_map.save(map_html)
             st.components.v1.html(open(map_html, "r", encoding="utf-8").read(), height=600)
 
-    # ============= ШВИДКІСТЬ + ПОТУЖНІСТЬ ==================
+    # ============= SPEED + POWER ==================
     with tabs[2]:
-        st.subheader("⚡ Швидкість та Потужність")
+        st.subheader("⚡ Speed & Power")
         fig, ax1 = plt.subplots()
 
         ax1.plot(df["Distance(km)"], df["Speed(km/h)"], label="Speed (km/h)", color="blue")
         ax1.plot(df["Distance(km)"], df["SpeedGPS(km/h)"], label="GPS Speed (km/h)", color="green", alpha=0.6)
-        ax1.set_ylabel("Швидкість (км/год)", color="blue")
+        ax1.set_ylabel("Speed (km/h)", color="blue")
         ax1.legend()
 
 
         ax2 = ax1.twinx()
         ax2.plot(df["Distance(km)"], df["MotorPower(W)"], label="Motor Power (W)", color="red", alpha=0.6)
-        ax2.set_ylabel("Потужність (W)", color="red")
+        ax2.set_ylabel("Power (W)", color="red")
 
-        ax1.set_xlabel("Дістанція (км)")
+        ax1.set_xlabel("Distance (km)")
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
-    # ============= НАПРУГА / СТРУМ ==================
+    # ============= VOLTAGE / CURRENT ==================
     with tabs[3]:
-        st.subheader("🔋 Напруга та Струм")
+        st.subheader("🔋 Voltage & Current")
         fig, ax1 = plt.subplots()
 
         ax1.plot(df["Distance(km)"], df["Voltage(V)"], color="orange", label="Voltage (V)")
-        ax1.set_ylabel("Вольти (V)", color="orange")
+        ax1.set_ylabel("Voltage (V)", color="orange")
         ax1.set_ylim(41, 54)
 
         ax2 = ax1.twinx()
         ax2.plot(df["Distance(km)"], df["Current(A)"], color="red", label="Current (A)", alpha=0.6)
-        ax2.set_ylabel("Ампери (A)", color="red")
+        ax2.set_ylabel("Current (A)", color="red")
 
-        ax1.set_xlabel("Дістанція (км)")
+        ax1.set_xlabel("Distance (km)")
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
-    # ============= Рівень підтримки ==================
+    # ============= ASSIST LEVEL ==================
     with tabs[4]:
-        st.subheader("📈 Рівень підтримки")
+        st.subheader("📈 Assist Level")
         fig, ax1 = plt.subplots()
 
         ax1.plot(df["Distance(km)"], df["AssistLevel"], label="PAS Level", color="brown")
-        ax1.set_ylabel("Рівень підтримки", color="brown")
+        ax1.set_ylabel("Assist Level", color="brown")
         ax1.set_ylim(0, 9)
 
 
         ax2 = ax1.twinx()
         ax2.plot(df["Distance(km)"], df["MotorPower(W)"], label="Motor Power (W)", color="red", alpha=0.6)
-        ax2.set_ylabel("Потужність (W)", color="red")
+        ax2.set_ylabel("Power (W)", color="red")
 
-        ax1.set_xlabel("Дістанція (км)")
+        ax1.set_xlabel("Distance (km)")
         plt.xticks(rotation=45)
         st.pyplot(fig)
