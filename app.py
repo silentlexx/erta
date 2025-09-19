@@ -82,7 +82,7 @@ if uploaded_file:
         # coordinates
         lat_col, lon_col = "Latitude", "Longitude"
         df = df.dropna(subset=[lat_col, lon_col])
-        st.write(f"Found {len(df)} coordinate points.")
+        st.write(f"Found {len(df)} records.")
 
 
     # ============= ROUTE ==================
