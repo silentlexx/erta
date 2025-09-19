@@ -1,7 +1,7 @@
 #!/bin/bash
 
 install(){
-    pip install streamlit pandas matplotlib folium
+    pip install -r requirements.txt
 }
 
 if [[ "$1" == "-i" ]]; then
