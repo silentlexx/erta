@@ -5,41 +5,6 @@ import streamlit as st
 import numpy as np
 from math import radians, sin, cos, sqrt, atan2
 
-# Haversine distance in km
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0  # km
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
-
-def clean_gps(df, lat_col="Latitude", lon_col="Longitude", time_col="Time(HH:mm:ss.fff)", max_speed=50):
-    df = df.copy().dropna(subset=[lat_col, lon_col])
-    df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
-    df = df.dropna(subset=[time_col])
-
-    mask = [True]  # first point is always ok
-    for i in range(1, len(df)):
-        lat1, lon1 = df.iloc[i-1][[lat_col, lon_col]]
-        lat2, lon2 = df.iloc[i][[lat_col, lon_col]]
-        t1, t2 = df.iloc[i-1][time_col], df.iloc[i][time_col]
-        dt = (t2 - t1).total_seconds() / 3600.0  # hours
-
-        if dt <= 0:
-            mask.append(False)
-            continue
-
-        dist = haversine(lat1, lon1, lat2, lon2)  # km
-        speed = dist / dt if dt > 0 else 0
-
-        if speed > max_speed:
-            print(f"Skipping point {i} (jump {dist:.2f} km in {dt*60:.1f} min at speed {speed:.1f} km/h)") 
-            mask.append(False)  # skip "jump"
-        else:
-            mask.append(True)
-
-    return df[mask].reset_index(drop=True)
-
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
 
