@@ -127,8 +127,8 @@ if uploaded_file:
     
         # --- Output ---
         st.metric("Total Distance", f"{total_distance:.2f} km")
-        st.metric("Total Time", f"{total_time:.2f} h")
-        st.metric("Moving Time", f"{moving_time:.2f} h")
+        #st.metric("Total Time", f"{total_time:.2f} h")
+        #st.metric("Moving Time", f"{moving_time:.2f} h")
     
         col1, col2, col3 = st.columns(3)
         with col1:
