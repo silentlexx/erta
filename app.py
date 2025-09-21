@@ -96,7 +96,7 @@ if uploaded_file:
         st.subheader("📊 Ride Statistics")
     
         # Загальний шлях
-        total_distance = df['cum_dist_km'].iloc[-1]
+        total_distance = df['Distance(km)'].iloc[-1]
     
         # Загальний час
         total_time = (df['time'].iloc[-1] - df['time'].iloc[0]).total_seconds() / 3600  # hours
