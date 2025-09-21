@@ -122,8 +122,8 @@ if uploaded_file:
     
         # Використаний заряд (по інтеграції)
         avg_voltage = df['Voltage(V)'].mean()
-        amp_hours = (df['Current(A)'].mean() * total_time)  # приблизно
-        watt_hours = (df['MotorPower(W)'].sum() / len(df)) * total_time
+        #amp_hours = (df['Current(A)'].mean() * total_time)  # приблизно
+        #watt_hours = (df['MotorPower(W)'].sum() / len(df)) * total_time
     
         # --- Output ---
         st.metric("Total Distance", f"{total_distance:.2f} km")
