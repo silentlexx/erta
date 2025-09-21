@@ -4,6 +4,7 @@ import folium
 import streamlit as st
 import numpy as np
 from streamlit.components.v1 import html
+from math import radians, sin, cos, sqrt, atan2
 
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
@@ -52,6 +53,40 @@ def fullscreen_html(html_code):
             }
             </script>
             """
+
+# Haversine distance у км
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0  # km
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+def clean_gps(df, lat_col="Latitude", lon_col="Longitude", time_col="Time(HH:mm:ss.fff)", max_speed_kmh=120):
+    df = df.copy().dropna(subset=[lat_col, lon_col])
+    df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
+    df = df.dropna(subset=[time_col])
+
+    mask = [True]  # перша точка завжди ок
+    for i in range(1, len(df)):
+        lat1, lon1 = df.iloc[i-1][[lat_col, lon_col]]
+        lat2, lon2 = df.iloc[i][[lat_col, lon_col]]
+        t1, t2 = df.iloc[i-1][time_col], df.iloc[i][time_col]
+        dt = (t2 - t1).total_seconds() / 3600.0  # години
+
+        if dt <= 0:
+            mask.append(False)
+            continue
+
+        dist = haversine(lat1, lon1, lat2, lon2)  # км
+        speed = dist / dt if dt > 0 else 0
+
+        if speed > max_speed_kmh:
+            mask.append(False)  # відсікаємо «скачок»
+        else:
+            mask.append(True)
+
+    return df[mask].reset_index(drop=True)
 
 # ---------- helper to parse time ----------
 def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
@@ -208,7 +243,7 @@ if uploaded_file:
     max_dist = float(df["Distance(km)"].max())
 
     dist_range = st.slider(
-        "Select distance range (km)",
+        "🛤️ Select distance range (km)",
         min_value=min_dist,
         max_value=max_dist,
         value=(min_dist, max_dist),  # initially full route
@@ -223,33 +258,34 @@ if uploaded_file:
     # create tabs
     tabs = st.tabs([
         "📊 Statistics",
-        "📊 Data",
-        "🛣️ Route",
+        "𝄜 Data",
+        "🗺️ Route",
         "⚡ Speed & Power",
         "🔋 Voltage & Current",
-        "📈 Assist Level",
+        "💪 Assist & Power",
+        "🚀 Assist & Speed",
     ])
 
     # ============= STAT ==================
 
     with tabs[0]:
         st.subheader("📊 Ride Statistics")
-    
         render_statistics(df)
 
     # ============= DATA ==================
     with tabs[1]:
-        st.subheader("📊 Raw Data")
+        st.subheader("𝄜 Raw Data")
         st.dataframe(df)    
 
     # ============= ROUTE ==================
     with tabs[2]:
         st.subheader("🗺️ Route on map")
         if not df.empty:
-            start_coords = (df["Latitude"].iloc[0], df["Longitude"].iloc[0])
+            dfg = df #clean_gps(df, max_speed_kmh=10)
+            start_coords = (dfg["Latitude"].iloc[0], dfg["Longitude"].iloc[0])
             trip_map = folium.Map(location=start_coords, zoom_start=14)
 
-            coords = df[["Latitude", "Longitude"]].values.tolist()
+            coords = dfg[["Latitude", "Longitude"]].values.tolist()
             folium.PolyLine(coords, color="blue", weight=3).add_to(trip_map)
             folium.Marker(coords[0], tooltip="Start").add_to(trip_map)
             folium.Marker(coords[-1], tooltip="End").add_to(trip_map)
@@ -292,9 +328,9 @@ if uploaded_file:
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
-    # ============= ASSIST LEVEL ==================
+    # ============= ASSIST / POWER ==================
     with tabs[5]:
-        st.subheader("📈 Assist Level")
+        st.subheader("💪 Assist Level & Power")
         fig, ax1 = plt.subplots()
 
         ax1.plot(df["Distance(km)"], df["AssistLevel"], label="PAS Level", color="brown")
@@ -309,3 +345,23 @@ if uploaded_file:
         ax1.set_xlabel("Distance (km)")
         plt.xticks(rotation=45)
         st.pyplot(fig)
+
+    # ============= ASSIST / SPEED ==================
+    with tabs[6]:
+        st.subheader("🚀 Assist Level & Speed")
+        fig, ax1 = plt.subplots()
+
+        ax1.plot(df["Distance(km)"], df["AssistLevel"], label="PAS Level", color="brown")
+        ax1.set_ylabel("Assist Level", color="brown")
+        ax1.set_ylim(0, 9)
+
+
+        ax2 = ax1.twinx()
+        ax2.plot(df["Distance(km)"], df["Speed(km/h)"], label="Motor Power (W)", color="blue", alpha=0.9)
+        ax2.set_ylabel("Speed (km/h)", color="blue")
+
+        ax1.set_xlabel("Distance (km)")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+
+    #st.html("<div>Powered by silentlexx. V.1.1</div>")
