@@ -53,7 +53,115 @@ def fullscreen_html(html_code):
             </script>
             """
 
+# ---------- helper to parse time ----------
+def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
+    times = pd.to_timedelta(df[time_col])
+    secs = times.dt.total_seconds().to_numpy()
 
+    # handle day rollovers (00:00:00)
+    day_offset = 0
+    offsets = np.zeros(len(secs))
+    prev = secs[0]
+    for i in range(1, len(secs)):
+        if secs[i] < prev:  # next day
+            day_offset += 86400
+        offsets[i] = day_offset
+        prev = secs[i]
+
+    base_date = pd.Timestamp("2000-01-01")
+    ts = base_date + pd.to_timedelta(secs + offsets, unit="s")
+
+    df = df.copy()
+    df["timestamp"] = ts
+    return df
+
+
+# ---------- Statistics tab ----------
+def render_statistics(df):
+    # ensure timestamp
+    if "timestamp" not in df.columns:
+        df = parse_time_column(df, "Time(HH:mm:ss.fff)")
+
+    # compute dt
+    df["dt_s"] = df["timestamp"].diff().dt.total_seconds().clip(lower=0).fillna(0)
+    df["dt_h"] = df["dt_s"] / 3600
+
+    # distance (беремо cum_dist_km, якщо є)
+    if "cum_dist_km" in df.columns:
+        total_distance = df["cum_dist_km"].iloc[-1]
+    elif "dist_km" in df.columns:
+        total_distance = df["dist_km"].sum()
+    else:
+        total_distance = 0.0
+
+    # total / moving time
+    total_time = df["dt_h"].sum()
+    if "Speed(km/h)" in df.columns:
+        moving_time = df.loc[df["Speed(km/h)"] > 1, "dt_h"].sum()
+    else:
+        moving_time = total_time
+
+    # speed
+    max_speed = df["Speed(km/h)"].max() if "Speed(km/h)" in df.columns else None
+    avg_speed = df["Speed(km/h)"].mean() if "Speed(km/h)" in df.columns else None
+
+    # motor power
+    max_power = df["MotorPower(W)"].max() if "MotorPower(W)" in df.columns else None
+    avg_power = df["MotorPower(W)"].mean() if "MotorPower(W)" in df.columns else None
+
+    # current
+    max_current = df["Current(A)"].max() if "Current(A)" in df.columns else None
+    avg_current = df["Current(A)"].mean() if "Current(A)" in df.columns else None
+
+    # assist distribution
+    assist_percent = None
+    if "AssistLevel" in df.columns:
+        assist_percent = df["AssistLevel"].value_counts(normalize=True).sort_index() * 100
+
+    # energy consumption
+    total_ah, total_wh, avg_voltage = None, None, None
+    if "Current(A)" in df.columns:
+        total_ah = (df["Current(A)"] * df["dt_h"]).sum()
+    if "MotorPower(W)" in df.columns:
+        total_wh = (df["MotorPower(W)"] * df["dt_h"]).sum()
+    if "Voltage(V)" in df.columns:
+        avg_voltage = df["Voltage(V)"].mean()
+
+    wh_per_km = (total_wh / total_distance) if total_wh and total_distance > 0 else None
+
+    # ---------- UI ----------
+    st.subheader("📊 Ride Statistics")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Distance", f"{total_distance:.2f} km")
+        st.metric("Total Time", f"{total_time:.2f} h")
+        st.metric("Moving Time", f"{moving_time:.2f} h")
+    with col2:
+        if max_speed is not None:
+            st.metric("Max Speed", f"{max_speed:.1f} km/h")
+            st.metric("Avg Speed", f"{avg_speed:.1f} km/h")
+        if max_power is not None:
+            st.metric("Max Motor Power", f"{max_power:.0f} W")
+            st.metric("Avg Motor Power", f"{avg_power:.0f} W")
+    with col3:
+        if max_current is not None:
+            st.metric("Max Current", f"{max_current:.1f} A")
+            st.metric("Avg Current", f"{avg_current:.1f} A")
+        if avg_voltage is not None:
+            st.metric("Avg Voltage", f"{avg_voltage:.1f} V")
+
+    if assist_percent is not None:
+        st.subheader("⚡ Assist Usage (%)")
+        st.bar_chart(assist_percent)
+
+    st.subheader("🔋 Energy Consumption")
+    if total_ah is not None:
+        st.write(f"Consumed Charge: **{total_ah:.2f} Ah**")
+    if total_wh is not None:
+        st.write(f"Consumed Energy: **{total_wh:.1f} Wh**")
+    if wh_per_km is not None:
+        st.write(f"Specific Consumption: **{wh_per_km:.1f} Wh/km**")
 # ----------------------------
 # UI
 # ----------------------------
@@ -95,71 +203,7 @@ if uploaded_file:
     with tabs[0]:
         st.subheader("📊 Ride Statistics")
     
-        # Загальний шлях
-        total_distance = df['Distance(km)'].iloc[-1]
-    
-        # Загальний час
-        #total_time = (df['Time(HH:mm:ss.fff)'].iloc[-1] - df['Time(HH:mm:ss.fff)'].iloc[0]).total_seconds() / 3600  # hours
-    
-        # Час у русі (беремо точки зі швидкістю > 1 км/год)
-        #moving_time = (df.loc[df['Speed(km/h)'] > 1, 'time'].iloc[-1] - 
-        #               df.loc[df['Speed(km/h)'] > 1, 'time'].iloc[0]).total_seconds() / 3600
-    
-        # Швидкість
-        max_speed = df['Speed(km/h)'].max()
-        avg_speed = df['Speed(km/h)'].mean()
-    
-        # Потужність
-        max_power = df['MotorPower(W)'].max()
-        avg_power = df['MotorPower(W)'].mean()
-    
-        # Ампераж
-        max_current = df['Current(A)'].max()
-        avg_current = df['Current(A)'].mean()
-    
-        # Асистент у %
-        assist_percent = df['AssistLevel'].value_counts(normalize=True) * 100
-    
-        # Використаний заряд (по інтеграції)
-        avg_voltage = df['Voltage(V)'].mean()
-        #amp_hours = (df['Current(A)'].mean() * total_time)  # приблизно
-        #watt_hours = (df['MotorPower(W)'].sum() / len(df)) * total_time
-    
-        # --- Output ---
-        st.metric("Total Distance", f"{total_distance:.2f} km")
-        #st.metric("Total Time", f"{total_time:.2f} h")
-        #st.metric("Moving Time", f"{moving_time:.2f} h")
-    
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Max Speed", f"{max_speed:.1f} km/h")
-            st.metric("Avg Speed", f"{avg_speed:.1f} km/h")
-        with col2:
-            st.metric("Max Power", f"{max_power:.0f} W")
-            st.metric("Avg Power", f"{avg_power:.0f} W")
-        with col3:
-            st.metric("Max Current", f"{max_current:.1f} A")
-            st.metric("Avg Current", f"{avg_current:.1f} A")
-    
-        st.subheader("⚡ Assist Usage (%)")
-        st.bar_chart(assist_percent)
-    
-        st.subheader("🔋 Energy Consumption")
-        st.write(f"Average Voltage: {avg_voltage:.1f} V")
-        st.write(f"Consumed Charge: {amp_hours:.2f} Ah")
-        st.write(f"Consumed Energy: {watt_hours:.1f} Wh")
-        st.write(f"Specific Consumption: {watt_hours / total_distance:.1f} Wh/km")
-    
-    # ============= DATA ==================
-    with tabs[1]:
-        st.subheader("📊 Data")
-        st.dataframe(df)
-
-        # coordinates
-        lat_col, lon_col = "Latitude", "Longitude"
-        df = df.dropna(subset=[lat_col, lon_col])
-        st.write(f"Found {len(df)} records.")
-
+        render_statistics(df)
 
     # ============= ROUTE ==================
     with tabs[2]:
