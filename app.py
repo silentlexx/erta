@@ -110,8 +110,8 @@ if uploaded_file:
         avg_speed = df['Speed(km/h)'].mean()
     
         # Потужність
-        max_power = df['Power(W)'].max()
-        avg_power = df['Power(W)'].mean()
+        max_power = df['MotorPower(W)'].max()
+        avg_power = df['MotorPower(W)'].mean()
     
         # Ампераж
         max_current = df['Current(A)'].max()
@@ -123,7 +123,7 @@ if uploaded_file:
         # Використаний заряд (по інтеграції)
         avg_voltage = df['Voltage(V)'].mean()
         amp_hours = (df['Current(A)'].mean() * total_time)  # приблизно
-        watt_hours = (df['Power(W)'].sum() / len(df)) * total_time
+        watt_hours = (df['MotorPower(W)'].sum() / len(df)) * total_time
     
         # --- Output ---
         st.metric("Total Distance", f"{total_distance:.2f} km")
