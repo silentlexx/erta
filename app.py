@@ -92,7 +92,7 @@ if uploaded_file:
 
     # ============= STAT ==================
 
-    with tab[0]:
+    with tabs[0]:
         st.subheader("📊 Ride Statistics")
     
         # Загальний шлях
