@@ -170,7 +170,7 @@ uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 if uploaded_file:
     # read CSV
     df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
-    df = df_clean
+    df_clean = df
     min_dist = float(df["Distance(km)"].min())
     max_dist = float(df["Distance(km)"].max())
 
