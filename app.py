@@ -208,10 +208,10 @@ if uploaded_file:
     with tabs[2]:
         st.subheader("🗺️ Route on map")
         if not df.empty:
-            start_coords = (df_clean[Latitude].iloc[0], df[Longitude].iloc[0])
+            start_coords = (df["Latitude"].iloc[0], df["Longitude"].iloc[0])
             trip_map = folium.Map(location=start_coords, zoom_start=14)
 
-            coords = df_clean[[Latitude, Longitude]].values.tolist()
+            coords = df[["Latitude", "Longitude"]].values.tolist()
             folium.PolyLine(coords, color="blue", weight=3).add_to(trip_map)
             folium.Marker(coords[0], tooltip="Start").add_to(trip_map)
             folium.Marker(coords[-1], tooltip="End").add_to(trip_map)
