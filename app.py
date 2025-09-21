@@ -75,6 +75,14 @@ def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
     df["timestamp"] = ts
     return df
 
+def format_hms(hours: float) -> str:
+    """Convert decimal hours -> H:MM format"""
+    if hours is None or pd.isna(hours):
+        return "-"
+    total_minutes = int(round(hours * 60))
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h}:{m:02d}"
 
 # ---------- Statistics tab ----------
 def render_statistics(df):
@@ -86,7 +94,7 @@ def render_statistics(df):
     df["dt_s"] = df["timestamp"].diff().dt.total_seconds().clip(lower=0).fillna(0)
     df["dt_h"] = df["dt_s"] / 3600
 
-    total_distance = df["Distance(km)"].iloc[-1] - df["Distance(km)"][0]
+    total_distance = df["Distance(km)"].max() - df["Distance(km)"].min()
 
     # total / moving time
     total_time = df["dt_h"].sum()
@@ -120,35 +128,67 @@ def render_statistics(df):
         total_wh = (df["MotorPower(W)"] * df["dt_h"]).sum()
     if "Voltage(V)" in df.columns:
         avg_voltage = df["Voltage(V)"].mean()
+        max_voltage = df["Voltage(V)"].max()
+        min_voltage = df["Voltage(V)"].min()
 
     wh_per_km = (total_wh / total_distance) if total_wh and total_distance > 0 else None
+    
+    # battery usage
+    start_bettery = df["BatteryPercentage"].iloc[0] if "BatteryPercentage" in df.columns else None
+    end_battery = df["BatteryPercentage"].iloc[-1] if "BatteryPercentage" in df.columns else None
+    total_battery_percent = df["BatteryPercentage"].max() - df["BatteryPercentage"].min() if "BatteryPercentage" in df.columns else None 
+    battery_per_km = (total_battery_percent / total_distance) if total_battery_percent and total_distance > 0 else None
 
     # ---------- UI ----------
 
-    col1, col2, col3 = st.columns(3)
+    st.markdown("""
+    <style>
+    div[data-testid="stMetricValue"] {
+        font-size: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         st.metric("Total Distance", f"{total_distance:.2f} km")
-        st.metric("Total Time", f"{total_time:.2f} h")
-        st.metric("Moving Time", f"{moving_time:.2f} h")
+        st.metric("Total Time", f"{format_hms(total_time)}")
+        st.metric("Moving Time", f"{format_hms(moving_time)}")
     with col2:
         if max_speed is not None:
             st.metric("Max Speed", f"{max_speed:.1f} km/h")
             st.metric("Avg Speed", f"{avg_speed:.1f} km/h")
+    with col3:
         if max_power is not None:
             st.metric("Max Motor Power", f"{max_power:.0f} W")
             st.metric("Avg Motor Power", f"{avg_power:.0f} W")
-    with col3:
+    with col4:
         if max_current is not None:
-            st.metric("Max Current", f"{max_current:.1f} A")
+            st.metric("Max Current", f"{max_current:.1f} A")  
+        if avg_current is not None:
             st.metric("Avg Current", f"{avg_current:.1f} A")
+    with col5:
+        if max_voltage:
+            st.metric("Max Voltage", f"{max_voltage:.1f} V")
+        if min_voltage is not None:
+            st.metric("Min Voltage", f"{min_voltage:.1f} V")
         if avg_voltage is not None:
             st.metric("Avg Voltage", f"{avg_voltage:.1f} V")
+    with col6:
+        if start_bettery is not None and end_battery is not None:
+            st.metric("Start Battery", f"{start_bettery:.0f} %")
+            st.metric("End Battery", f"{end_battery:.0f} %")  
+        if total_battery_percent is not None:
+            st.metric("Battery Used", f"{total_battery_percent:.1f} %")
+
 
     if assist_percent is not None:
         st.subheader("⚡ Assist Usage (%)")
         st.bar_chart(assist_percent)
 
     st.subheader("🔋 Energy Consumption")
+    if battery_per_km is not None:
+        st.write(f"Battery Usage: **{battery_per_km:.2f} %/km**")
     if total_ah is not None:
         st.write(f"Consumed Charge: **{total_ah:.2f} Ah**")
     if total_wh is not None:
@@ -197,6 +237,11 @@ if uploaded_file:
     
         render_statistics(df)
 
+    # ============= DATA ==================
+    with tabs[1]:
+        st.subheader("📊 Raw Data")
+        st.dataframe(df)    
+
     # ============= ROUTE ==================
     with tabs[2]:
         st.subheader("🗺️ Route on map")
@@ -209,7 +254,7 @@ if uploaded_file:
             folium.Marker(coords[0], tooltip="Start").add_to(trip_map)
             folium.Marker(coords[-1], tooltip="End").add_to(trip_map)
 
-            html(fullscreen_html(trip_map._repr_html_()), height=600)
+            html(fullscreen_html(trip_map._repr_html_()), height=900)
 
     # ============= SPEED + POWER ==================
     with tabs[3]:
