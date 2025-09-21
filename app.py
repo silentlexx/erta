@@ -86,7 +86,7 @@ def render_statistics(df):
     df["dt_s"] = df["timestamp"].diff().dt.total_seconds().clip(lower=0).fillna(0)
     df["dt_h"] = df["dt_s"] / 3600
 
-    total_distance = df["Distance(km)"].iloc[-1]
+    total_distance = df["Distance(km)"].iloc[-1] - df["Distance(km)"][0]
 
     # total / moving time
     total_time = df["dt_h"].sum()
