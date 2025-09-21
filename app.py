@@ -170,7 +170,7 @@ uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 if uploaded_file:
     # read CSV
     df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
-
+    df = df_clean
     min_dist = float(df["Distance(km)"].min())
     max_dist = float(df["Distance(km)"].max())
 
@@ -208,7 +208,6 @@ if uploaded_file:
     with tabs[2]:
         st.subheader("🗺️ Route on map")
         if not df.empty:
-            df_clean = df #clean_gps(df) 
             start_coords = (df_clean[lat_col].iloc[0], df[lon_col].iloc[0])
             trip_map = folium.Map(location=start_coords, zoom_start=14)
 
