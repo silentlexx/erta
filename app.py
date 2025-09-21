@@ -130,7 +130,6 @@ def render_statistics(df):
     wh_per_km = (total_wh / total_distance) if total_wh and total_distance > 0 else None
 
     # ---------- UI ----------
-    st.subheader("📊 Ride Statistics")
 
     col1, col2, col3 = st.columns(3)
     with col1:
