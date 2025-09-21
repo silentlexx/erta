@@ -96,34 +96,34 @@ if uploaded_file:
         st.subheader("📊 Ride Statistics")
     
         # Загальний шлях
-        total_distance = df_clean['cum_dist_km'].iloc[-1]
+        total_distance = df['cum_dist_km'].iloc[-1]
     
         # Загальний час
-        total_time = (df_clean['time'].iloc[-1] - df_clean['time'].iloc[0]).total_seconds() / 3600  # hours
+        total_time = (df['time'].iloc[-1] - df['time'].iloc[0]).total_seconds() / 3600  # hours
     
         # Час у русі (беремо точки зі швидкістю > 1 км/год)
-        moving_time = (df_clean.loc[df_clean['Speed(km/h)'] > 1, 'time'].iloc[-1] - 
-                       df_clean.loc[df_clean['Speed(km/h)'] > 1, 'time'].iloc[0]).total_seconds() / 3600
+        moving_time = (df.loc[df['Speed(km/h)'] > 1, 'time'].iloc[-1] - 
+                       df.loc[df['Speed(km/h)'] > 1, 'time'].iloc[0]).total_seconds() / 3600
     
         # Швидкість
-        max_speed = df_clean['Speed(km/h)'].max()
-        avg_speed = df_clean['Speed(km/h)'].mean()
+        max_speed = df['Speed(km/h)'].max()
+        avg_speed = df['Speed(km/h)'].mean()
     
         # Потужність
-        max_power = df_clean['Power(W)'].max()
-        avg_power = df_clean['Power(W)'].mean()
+        max_power = df['Power(W)'].max()
+        avg_power = df['Power(W)'].mean()
     
         # Ампераж
-        max_current = df_clean['Current(A)'].max()
-        avg_current = df_clean['Current(A)'].mean()
+        max_current = df['Current(A)'].max()
+        avg_current = df['Current(A)'].mean()
     
         # Асистент у %
-        assist_percent = df_clean['AssistLevel'].value_counts(normalize=True) * 100
+        assist_percent = df['AssistLevel'].value_counts(normalize=True) * 100
     
         # Використаний заряд (по інтеграції)
-        avg_voltage = df_clean['Voltage(V)'].mean()
-        amp_hours = (df_clean['Current(A)'].mean() * total_time)  # приблизно
-        watt_hours = (df_clean['Power(W)'].sum() / len(df_clean)) * total_time
+        avg_voltage = df['Voltage(V)'].mean()
+        amp_hours = (df['Current(A)'].mean() * total_time)  # приблизно
+        watt_hours = (df['Power(W)'].sum() / len(df)) * total_time
     
         # --- Output ---
         st.metric("Total Distance", f"{total_distance:.2f} km")
