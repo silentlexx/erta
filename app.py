@@ -82,6 +82,7 @@ if uploaded_file:
 
     # create tabs
     tabs = st.tabs([
+        "📊 Statistics",
         "📊 Data",
         "🛣️ Route",
         "⚡ Speed & Power",
@@ -89,8 +90,68 @@ if uploaded_file:
         "📈 Assist Level",
     ])
 
+    # ============= STAT ==================
+
+    with tab[0]:
+        st.subheader("📊 Ride Statistics")
+    
+        # Загальний шлях
+        total_distance = df_clean['cum_dist_km'].iloc[-1]
+    
+        # Загальний час
+        total_time = (df_clean['time'].iloc[-1] - df_clean['time'].iloc[0]).total_seconds() / 3600  # hours
+    
+        # Час у русі (беремо точки зі швидкістю > 1 км/год)
+        moving_time = (df_clean.loc[df_clean['Speed(km/h)'] > 1, 'time'].iloc[-1] - 
+                       df_clean.loc[df_clean['Speed(km/h)'] > 1, 'time'].iloc[0]).total_seconds() / 3600
+    
+        # Швидкість
+        max_speed = df_clean['Speed(km/h)'].max()
+        avg_speed = df_clean['Speed(km/h)'].mean()
+    
+        # Потужність
+        max_power = df_clean['Power(W)'].max()
+        avg_power = df_clean['Power(W)'].mean()
+    
+        # Ампераж
+        max_current = df_clean['Current(A)'].max()
+        avg_current = df_clean['Current(A)'].mean()
+    
+        # Асистент у %
+        assist_percent = df_clean['AssistLevel'].value_counts(normalize=True) * 100
+    
+        # Використаний заряд (по інтеграції)
+        avg_voltage = df_clean['Voltage(V)'].mean()
+        amp_hours = (df_clean['Current(A)'].mean() * total_time)  # приблизно
+        watt_hours = (df_clean['Power(W)'].sum() / len(df_clean)) * total_time
+    
+        # --- Output ---
+        st.metric("Total Distance", f"{total_distance:.2f} km")
+        st.metric("Total Time", f"{total_time:.2f} h")
+        st.metric("Moving Time", f"{moving_time:.2f} h")
+    
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Max Speed", f"{max_speed:.1f} km/h")
+            st.metric("Avg Speed", f"{avg_speed:.1f} km/h")
+        with col2:
+            st.metric("Max Power", f"{max_power:.0f} W")
+            st.metric("Avg Power", f"{avg_power:.0f} W")
+        with col3:
+            st.metric("Max Current", f"{max_current:.1f} A")
+            st.metric("Avg Current", f"{avg_current:.1f} A")
+    
+        st.subheader("⚡ Assist Usage (%)")
+        st.bar_chart(assist_percent)
+    
+        st.subheader("🔋 Energy Consumption")
+        st.write(f"Average Voltage: {avg_voltage:.1f} V")
+        st.write(f"Consumed Charge: {amp_hours:.2f} Ah")
+        st.write(f"Consumed Energy: {watt_hours:.1f} Wh")
+        st.write(f"Specific Consumption: {watt_hours / total_distance:.1f} Wh/km")
+    
     # ============= DATA ==================
-    with tabs[0]:
+    with tabs[1]:
         st.subheader("📊 Data")
         st.dataframe(df)
 
@@ -101,7 +162,7 @@ if uploaded_file:
 
 
     # ============= ROUTE ==================
-    with tabs[1]:
+    with tabs[2]:
         st.subheader("🗺️ Route on map")
         if not df.empty:
             df_clean = df #clean_gps(df) 
@@ -116,7 +177,7 @@ if uploaded_file:
             html(fullscreen_html(trip_map._repr_html_()), height=600)
 
     # ============= SPEED + POWER ==================
-    with tabs[2]:
+    with tabs[3]:
         st.subheader("⚡ Speed & Power")
         fig, ax1 = plt.subplots()
 
@@ -135,7 +196,7 @@ if uploaded_file:
         st.pyplot(fig)
 
     # ============= VOLTAGE / CURRENT ==================
-    with tabs[3]:
+    with tabs[4]:
         st.subheader("🔋 Voltage & Current")
         fig, ax1 = plt.subplots()
 
@@ -152,7 +213,7 @@ if uploaded_file:
         st.pyplot(fig)
 
     # ============= ASSIST LEVEL ==================
-    with tabs[4]:
+    with tabs[5]:
         st.subheader("📈 Assist Level")
         fig, ax1 = plt.subplots()
 
