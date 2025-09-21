@@ -99,7 +99,7 @@ if uploaded_file:
         total_distance = df['Distance(km)'].iloc[-1]
     
         # Загальний час
-        total_time = (df['time'].iloc[-1] - df['time'].iloc[0]).total_seconds() / 3600  # hours
+        total_time = (df['Time(HH:mm:ss.fff)'].iloc[-1] - df['Time(HH:mm:ss.fff)'].iloc[0]).total_seconds() / 3600  # hours
     
         # Час у русі (беремо точки зі швидкістю > 1 км/год)
         moving_time = (df.loc[df['Speed(km/h)'] > 1, 'time'].iloc[-1] - 
