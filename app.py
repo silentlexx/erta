@@ -88,9 +88,9 @@ def render_statistics(df):
 
     # distance (беремо cum_dist_km, якщо є)
     if "cum_dist_km" in df.columns:
-        total_distance = df["cum_dist_km"].iloc[-1]
+        total_distance = df["Distance(km)"].iloc[-1]
     elif "dist_km" in df.columns:
-        total_distance = df["dist_km"].sum()
+        total_distance = df["Distance(km)"].sum()
     else:
         total_distance = 0.0
 
@@ -170,7 +170,6 @@ uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 if uploaded_file:
     # read CSV
     df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
-    df_clean = df
     min_dist = float(df["Distance(km)"].min())
     max_dist = float(df["Distance(km)"].max())
 
