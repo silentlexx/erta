@@ -1,6 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import folium
+import folium, datetime
 import streamlit as st
 import numpy as np
 from streamlit.components.v1 import html
@@ -54,39 +54,100 @@ def fullscreen_html(html_code):
             </script>
             """
 
-# Haversine distance у км
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371.0  # km
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+def haversine_km(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = radians(lat2 - lat1)
+        dlon = radians(lon2 - lon1)
+        a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+        return R * 2 * atan2(sqrt(a), sqrt(1-a))
 
-def clean_gps(df, lat_col="Latitude", lon_col="Longitude", time_col="Time(HH:mm:ss.fff)", max_speed_kmh=120):
-    df = df.copy().dropna(subset=[lat_col, lon_col])
-    df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
-    df = df.dropna(subset=[time_col])
+def clean_gps_data(df, lat_col="Latitude", lon_col="Longitude", speed_col="Speed(km/h)", time_col="Time(HH:mm:ss.fff)"):
+    df = df.copy()
+  
+    max_speed_kmh = df[speed_col].max()
+    max_speed_mps = max_speed_kmh / 3.6  # convert to m/s
+    
+    # 1. Час → timedelta (секунди від початку доби)
+    times = pd.to_timedelta(df[time_col])
+    secs = times.dt.total_seconds().to_numpy()
 
-    mask = [True]  # перша точка завжди ок
+    # 2. Обробка переходів через північ
+    day_offset = 0
+    offsets = np.zeros(len(secs))
+    prev = secs[0]
+    for i in range(1, len(secs)):
+        if secs[i] < prev:
+            day_offset += 86400
+        offsets[i] = day_offset
+        prev = secs[i]
+
+    df["time_s"] = secs + offsets
+
+    # 3. Відстань між точками (метри)
+    lats = df[lat_col].to_numpy()
+    lons = df[lon_col].to_numpy()
+    ts = df["time_s"].to_numpy()
+    dists = [0]
+    delta_s = [0]
     for i in range(1, len(df)):
-        lat1, lon1 = df.iloc[i-1][[lat_col, lon_col]]
-        lat2, lon2 = df.iloc[i][[lat_col, lon_col]]
-        t1, t2 = df.iloc[i-1][time_col], df.iloc[i][time_col]
-        dt = (t2 - t1).total_seconds() / 3600.0  # години
+       try:
+            dists.append(haversine_km(lats[i-1], lons[i-1], lats[i], lons[i]) * 1000)
+            delta_s.append(ts[i] - ts[i-1])
+       except:
+            dists.append(0)
+            delta_s.append(0)
+    df["dist_m"] = dists
+    df["dt_s"] = delta_s
 
-        if dt <= 0:
-            mask.append(False)
-            continue
+    max_delta_s = df["dt_s"].mean() 
+    max_jump_m = max_speed_mps * max_delta_s * 50 # FIXME: 50 - empirical factor
+    if max_jump_m < 100:
+        max_jump_m = 100
 
-        dist = haversine(lat1, lon1, lat2, lon2)  # км
-        speed = dist / dt if dt > 0 else 0
+    # 5. Маска:
+    mask = (
+        #(df[speed_col] <= max_speed_kmh) &      # не нереальна швидкість
+        (df["dist_m"] > 0) &
+        (df["dist_m"] <= max_jump_m)             # не великий стрибок
+        #(df[speed_col] > 1) 
+        #~((df["dist_m"] < min_move_m) & (df["speed_kmh"] < min_speed_kmh)) # прибираємо "тремтіння"
+    )
 
-        if speed > max_speed_kmh:
-            mask.append(False)  # відсікаємо «скачок»
-        else:
-            mask.append(True)
+    df_clean = df[mask].reset_index(drop=True)
 
-    return df[mask].reset_index(drop=True)
+    # 6. Згладжування (ковзне середнє на 5 точок)
+    df_clean[lat_col] = df_clean[lat_col].rolling(window=5, center=True, min_periods=1).mean()
+    df_clean[lon_col] = df_clean[lon_col].rolling(window=5, center=True, min_periods=1).mean()
+
+    return df_clean
+
+def reduce_points_by_distance(df, lat_col="Latitude", lon_col="Longitude", step_m=1):
+    """
+    Залишає одну точку кожні step_m метрів по маршруту.
+    """
+    from math import radians, cos, sin, atan2, sqrt
+
+    if df.empty:
+        return df
+
+    keep_rows = [0]   # залишаємо першу точку
+    dist_accum = 0.0
+    last_lat, last_lon = df.iloc[0][lat_col], df.iloc[0][lon_col]
+
+    for i in range(1, len(df)):
+        lat, lon = df.iloc[i][lat_col], df.iloc[i][lon_col]
+        d = haversine_km(last_lat, last_lon, lat, lon) * 1000
+        dist_accum += d
+        if dist_accum >= step_m:   # накопичили метр
+            keep_rows.append(i)
+            last_lat, last_lon = lat, lon
+            dist_accum = 0.0
+
+    # завжди додаємо останню точку
+    if keep_rows[-1] != len(df) - 1:
+        keep_rows.append(len(df) - 1)
+
+    return df.iloc[keep_rows].reset_index(drop=True)
 
 # ---------- helper to parse time ----------
 def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
@@ -111,13 +172,8 @@ def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
     return df
 
 def format_hms(hours: float) -> str:
-    """Convert decimal hours -> H:MM format"""
-    if hours is None or pd.isna(hours):
-        return "-"
-    total_minutes = int(round(hours * 60))
-    h = total_minutes // 60
-    m = total_minutes % 60
-    return f"{h}:{m:02d}"
+    total_seconds = int(hours * 3600)
+    return str(datetime.timedelta(seconds=total_seconds))
 
 # ---------- Statistics tab ----------
 def render_statistics(df):
@@ -275,22 +331,63 @@ if uploaded_file:
     # ============= DATA ==================
     with tabs[1]:
         st.subheader("𝄜 Raw Data")
-        st.dataframe(df)    
+        st.dataframe(df)
+        st.write(f"Found {len(df)} records.")    
 
     # ============= ROUTE ==================
     with tabs[2]:
         st.subheader("🗺️ Route on map")
-        if not df.empty:
-            dfg = df #clean_gps(df, max_speed_kmh=10)
+        dfg = reduce_points_by_distance(clean_gps_data(df))
+        if not dfg.empty:
+
+            marker_range = st.slider(
+                "⏺ Select distance between markers (m)",
+                min_value=0,
+                max_value=1000,
+                value=10,
+                step=10
+            )
+
             start_coords = (dfg["Latitude"].iloc[0], dfg["Longitude"].iloc[0])
-            trip_map = folium.Map(location=start_coords, zoom_start=14)
+            trip_map = folium.Map(location=[df["Latitude"].mean(), df["Longitude"].mean()], zoom_start=13)
 
             coords = dfg[["Latitude", "Longitude"]].values.tolist()
             folium.PolyLine(coords, color="blue", weight=3).add_to(trip_map)
-            folium.Marker(coords[0], tooltip="Start").add_to(trip_map)
-            folium.Marker(coords[-1], tooltip="End").add_to(trip_map)
+            folium.Marker(coords[0], tooltip="Start", icon=folium.Icon(color="green", icon="play")).add_to(trip_map)
 
-            html(fullscreen_html(trip_map._repr_html_()), height=900)
+            if marker_range > 0:
+                # --- додавання маркерів кожні 100 м ---
+                distance_accum = 0
+                next_marker = 100  # перший маркер через 100 м
+                for i in range(1, len(coords)):
+                    lat1, lon1 = coords[i-1]
+                    lat2, lon2 = coords[i]
+                    dist = haversine_km(lat1, lon1, lat2, lon2) * 1000  # відстань між точками
+                    distance_accum += dist
+                    if distance_accum >= next_marker:
+                        row = dfg.iloc[i]
+                        tooltip_text = (
+                            f"📍 {next_marker} m<br>"
+                            f"🚴 Speed: {row['Speed(km/h)']:.1f} km/h<br>"
+                            f"⚡ Motor Power: {row['MotorPower(W)']:.0f} W<br>"
+                            f"🔋 Voltage: {row['Voltage(V)']:.1f} V<br>"
+                            f"🔋 Battery: {row['BatteryPercentage']:.0f}%<br>"
+                            f"🤖 Assist: {row['AssistLevel']}"
+                        )
+                        radius = (int(row["AssistLevel"]) / 4) + 1
+                        if row["MotorPower(W)"] > 0: 
+                            color = "red" 
+                        else:
+                            color = "green"
+                        folium.CircleMarker([lat2, lon2],
+                                    tooltip=tooltip_text, radius=radius, color=color, fill=True, fill_opacity=0.8).add_to(trip_map)
+                        next_marker += marker_range  # наступна ціль через 100 м
+
+            folium.Marker(coords[-1], tooltip="End", icon=folium.Icon(color="red", icon="stop")).add_to(trip_map)
+
+            html(fullscreen_html(trip_map._repr_html_()), height=400)
+            st.write(f"Found {len(dfg)} location points.")
+            #st.dataframe(dfg)
 
     # ============= SPEED + POWER ==================
     with tabs[3]:
