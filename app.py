@@ -206,6 +206,7 @@ def render_statistics(df):
     max_current = df["Current(A)"].max() if "Current(A)" in df.columns else None
     avg_current = df["Current(A)"].mean() if "Current(A)" in df.columns else None
 
+
     # assist distribution
     assist_percent = None
     if "AssistLevel" in df.columns:
@@ -230,7 +231,7 @@ def render_statistics(df):
     total_battery_percent = df["BatteryPercentage"].max() - df["BatteryPercentage"].min() if "BatteryPercentage" in df.columns else None 
     battery_per_km = (total_battery_percent / total_distance) if total_battery_percent and total_distance > 0 else None
 
-    # ---------- UI ----------
+    df["dist_km"] = df["Distance(km)"].diff().clip(lower=0).fillna(0)
 
     st.markdown("""
     <style>
@@ -272,9 +273,71 @@ def render_statistics(df):
         if total_battery_percent is not None:
             st.metric("Battery Used", f"{total_battery_percent:.1f} %")
 
+    st.subheader("⚙️ Motor Power usage")
+
+    # сумарний пробіг з мотором та без
+    power_distance = {
+        "0 W": df.loc[df["MotorPower(W)"] <= 0, "dist_km"].sum(),
+        ">0 W": df.loc[df["MotorPower(W)"] > 0, "dist_km"].sum()
+    }
+
+    # у відсотках
+    total_dist = sum(power_distance.values())
+    power_percent = {k: (v / total_dist * 100 if total_dist > 0 else 0)
+                    for k, v in power_distance.items()}
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.write(f"Distance without Motor assist:")
+        st.write(f"Distance with Motor assist:")
+
+    with col2:
+        st.write(f"**{power_distance['0 W']:.2f} km**")
+        st.write(f"**{power_distance['>0 W']:.2f} km**")
+
+    with col3:
+        st.write(f"**{power_percent['0 W']:.1f}%**")
+        st.write(f"**{power_percent['>0 W']:.1f}%**")
+
+    # знайти максимум потужності
+    max_power = df["MotorPower(W)"].max()
+
+    # базові бінові межі
+    bins = [-0.1, 0, 100, 200, 300, 500, 1000, 1200]
+
+    # додаємо верхній ліміт, якщо він більший за останній
+    if max_power > bins[-1]:
+        bins.append(max_power)
+
+    labels = [
+        "0 W",
+        "1-100 W",
+        "101-200 W",
+        "201-300 W",
+        "301-500 W",
+        "501-1000 W",
+        "1001-1200 W",
+    ]
+
+    if max_power > 1000:
+        labels.append(f">1000-{int(max_power)} W")
+
+    # категоризація з параметром duplicates="drop"
+    df["PowerRange"] = pd.cut(
+        df["MotorPower(W)"], 
+        bins=bins, 
+        labels=labels, 
+        right=True, 
+        duplicates="drop"
+    )
+
+    dist_by_power = df.groupby("PowerRange")["dist_km"].sum()
+    dist_percent = dist_by_power / dist_by_power.sum() * 100
+
+    st.bar_chart(dist_percent)
 
     if assist_percent is not None:
-        st.subheader("⚡ Assist Usage (%)")
+        st.subheader("💪 Assist Usage (%)")
         st.bar_chart(assist_percent)
 
     st.subheader("🔋 Energy Consumption")
@@ -286,6 +349,7 @@ def render_statistics(df):
         st.write(f"Consumed Energy: **{total_wh:.1f} Wh**")
     if wh_per_km is not None:
         st.write(f"Specific Consumption: **{wh_per_km:.1f} Wh/km**")
+
 # ----------------------------
 # UI
 # ----------------------------
