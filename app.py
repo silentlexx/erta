@@ -9,6 +9,18 @@ from math import radians, sin, cos, sqrt, atan2
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
 
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1200px;
+        margin: auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 def fullscreen_html(html_code):
     return """
             <style>
@@ -206,12 +218,6 @@ def render_statistics(df):
     max_current = df["Current(A)"].max() if "Current(A)" in df.columns else None
     avg_current = df["Current(A)"].mean() if "Current(A)" in df.columns else None
 
-
-    # assist distribution
-    assist_percent = None
-    if "AssistLevel" in df.columns:
-        assist_percent = df["AssistLevel"].value_counts(normalize=True).sort_index() * 100
-
     # energy consumption
     total_ah, total_wh, avg_voltage = None, None, None
     if "Current(A)" in df.columns:
@@ -231,7 +237,7 @@ def render_statistics(df):
     total_battery_percent = df["BatteryPercentage"].max() - df["BatteryPercentage"].min() if "BatteryPercentage" in df.columns else None 
     battery_per_km = (total_battery_percent / total_distance) if total_battery_percent and total_distance > 0 else None
 
-    df["dist_km"] = df["Distance(km)"].diff().clip(lower=0).fillna(0)
+    df["DistancePercentage"] = df["Distance(km)"].diff().clip(lower=0).fillna(0)
 
     st.markdown("""
     <style>
@@ -273,31 +279,41 @@ def render_statistics(df):
         if total_battery_percent is not None:
             st.metric("Battery Used", f"{total_battery_percent:.1f} %")
 
-    st.subheader("⚙️ Motor Power usage")
+    # діапазони швидкості (можна змінювати під свої потреби)
+    speed_bins = [-0.1, 0, 5, 10, 20, 30, 40, 50, 100]  
+    speed_labels = [
+        "0 km/h",
+        "1-5 km/h",
+        "6-10 km/h",
+        "11-20 km/h",
+        "21-30 km/h",
+        "31-40 km/h",
+        "41-50 km/h",
+        ">50 km/h"
+    ]
+
+    df["SpeedRange"] = pd.cut(df["Speed(km/h)"], bins=speed_bins, labels=speed_labels, right=True)
+
+    # скільки км в кожному діапазоні
+    dist_by_speed = df.groupby("SpeedRange")["DistancePercentage"].sum()
+
+    # у відсотках
+    dist_percent_speed = dist_by_speed / dist_by_speed.sum() * 100
+
+    st.subheader("🚴 Speed (%)")
+
+    # графік
+    st.bar_chart(dist_percent_speed)
+
+    st.subheader("⚙️ Motor Power usage (%)")
 
     # сумарний пробіг з мотором та без
     power_distance = {
-        "0 W": df.loc[df["MotorPower(W)"] <= 0, "dist_km"].sum(),
-        ">0 W": df.loc[df["MotorPower(W)"] > 0, "dist_km"].sum()
+        "0 W": df.loc[df["MotorPower(W)"] <= 0, "DistancePercentage"].sum(),
+        ">0 W": df.loc[df["MotorPower(W)"] > 0, "DistancePercentage"].sum()
     }
 
-    # у відсотках
-    total_dist = sum(power_distance.values())
-    power_percent = {k: (v / total_dist * 100 if total_dist > 0 else 0)
-                    for k, v in power_distance.items()}
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.write(f"Distance without Motor assist:")
-        st.write(f"Distance with Motor assist:")
-
-    with col2:
-        st.write(f"**{power_distance['0 W']:.2f} km**")
-        st.write(f"**{power_distance['>0 W']:.2f} km**")
-
-    with col3:
-        st.write(f"**{power_percent['0 W']:.1f}%**")
-        st.write(f"**{power_percent['>0 W']:.1f}%**")
 
     # знайти максимум потужності
     max_power = df["MotorPower(W)"].max()
@@ -331,14 +347,34 @@ def render_statistics(df):
         duplicates="drop"
     )
 
-    dist_by_power = df.groupby("PowerRange")["dist_km"].sum()
+    dist_by_power = df.groupby("PowerRange")["DistancePercentage"].sum()
     dist_percent = dist_by_power / dist_by_power.sum() * 100
 
     st.bar_chart(dist_percent)
 
-    if assist_percent is not None:
-        st.subheader("💪 Assist Usage (%)")
-        st.bar_chart(assist_percent)
+    # у відсотках
+    total_dist = sum(power_distance.values())
+    power_percent = {k: (v / total_dist * 100 if total_dist > 0 else 0)
+                    for k, v in power_distance.items()}
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.write(f"Distance without Motor assist:")
+        st.write(f"Distance with Motor assist:")
+
+    with col2:
+        st.write(f"**{power_distance['0 W']:.2f} km**")
+        st.write(f"**{power_distance['>0 W']:.2f} km**")
+
+    with col3:
+        st.write(f"**{power_percent['0 W']:.1f}%**")
+        st.write(f"**{power_percent['>0 W']:.1f}%**")
+
+
+    st.subheader("💪 Assist Usage (%)")
+    # assist distribution
+    assist_percent = df["AssistLevel"].value_counts(normalize=True).sort_index() * 100
+    st.bar_chart(assist_percent)
 
     st.subheader("🔋 Energy Consumption")
     if battery_per_km is not None:
@@ -356,9 +392,17 @@ def render_statistics(df):
 
 uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
 
-if uploaded_file:
-    # read CSV
+if uploaded_file is not None:
+    # якщо користувач завантажив свій файл
     df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
+    #st.success("✅ File uploaded successfully!")
+else:
+    # fallback: завантажуємо демо-дані з диску
+    demo_path = "demo.csv"   # шлях до вашого demo-файлу
+    df = pd.read_csv(demo_path, sep=";", skiprows=1)
+    st.info("ℹ️ Using demo.csv. Upload your CSV from Eggrider.")
+
+if not df.empty:
     min_dist = float(df["Distance(km)"].min())
     max_dist = float(df["Distance(km)"].max())
 
@@ -378,29 +422,26 @@ if uploaded_file:
     # create tabs
     tabs = st.tabs([
         "📊 Statistics",
+        "📈 Graphs",
+        "🗺️ Map",
         "𝄜 Data",
-        "🗺️ Route",
-        "⚡ Speed & Power",
-        "🔋 Voltage & Current",
-        "💪 Assist & Power",
-        "🚀 Assist & Speed",
     ])
 
     # ============= STAT ==================
 
     with tabs[0]:
-        st.subheader("📊 Ride Statistics")
+        st.header("📊 Ride Statistics")
         render_statistics(df)
 
     # ============= DATA ==================
-    with tabs[1]:
-        st.subheader("𝄜 Raw Data")
-        st.dataframe(df)
+    with tabs[3]:
+        st.header("𝄜 Raw Data")
+        st.dataframe(df, height=780)
         st.write(f"Found {len(df)} records.")    
 
     # ============= ROUTE ==================
     with tabs[2]:
-        st.subheader("🗺️ Route on map")
+        st.header("🗺️ Route on map")
         dfg = reduce_points_by_distance(clean_gps_data(df))
         if not dfg.empty:
 
@@ -449,12 +490,14 @@ if uploaded_file:
 
             folium.Marker(coords[-1], tooltip="End", icon=folium.Icon(color="red", icon="stop")).add_to(trip_map)
 
-            html(fullscreen_html(trip_map._repr_html_()), height=400)
+            html(fullscreen_html(trip_map._repr_html_()), height=700)
             st.write(f"Found {len(dfg)} location points.")
             #st.dataframe(dfg)
 
     # ============= SPEED + POWER ==================
-    with tabs[3]:
+    with tabs[1]:
+        st.header("📈 Graphs")
+       # ============= SPEED + POWER ==================
         st.subheader("⚡ Speed & Power")
         fig, ax1 = plt.subplots()
 
@@ -473,7 +516,7 @@ if uploaded_file:
         st.pyplot(fig)
 
     # ============= VOLTAGE / CURRENT ==================
-    with tabs[4]:
+
         st.subheader("🔋 Voltage & Current")
         fig, ax1 = plt.subplots()
 
@@ -490,7 +533,7 @@ if uploaded_file:
         st.pyplot(fig)
 
     # ============= ASSIST / POWER ==================
-    with tabs[5]:
+
         st.subheader("💪 Assist Level & Power")
         fig, ax1 = plt.subplots()
 
@@ -508,7 +551,7 @@ if uploaded_file:
         st.pyplot(fig)
 
     # ============= ASSIST / SPEED ==================
-    with tabs[6]:
+
         st.subheader("🚀 Assist Level & Speed")
         fig, ax1 = plt.subplots()
 
@@ -526,3 +569,28 @@ if uploaded_file:
         st.pyplot(fig)
 
     #st.html("<div>Powered by silentlexx. V.1.1</div>")
+    st.markdown(
+    """
+    <style>
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        color: #999;
+        text-align: center;
+        padding: 5px;
+        font-size: 11px;
+        background: rgb(14, 17, 23);
+    }
+    a {
+        color: #bbb !important;
+        text-decoration: none !important;
+    }
+    </style>
+    <div class="footer">
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v.1.1.
+    </div>
+    """,
+    unsafe_allow_html=True
+)

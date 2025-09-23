@@ -9,4 +9,6 @@ if [[ "$1" == "-i" ]]; then
     exit 0
 fi
 
+echo "app.sh -i: Install dependencies"
+
 streamlit run app.py
