@@ -205,6 +205,7 @@ def render_statistics(df):
         .stColumn {
            width: calc(49.6667% - 1rem);
            flex: 1 1 calc(49.6667% - 1rem);
+           min-width: auto;
         }
     }
     </style>
