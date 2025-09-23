@@ -17,7 +17,12 @@ st.markdown(
     .block-container {
         max-width: 1200px;
         margin: auto;
-    }
+    }    
+    @media (max-width: 640px) {
+       #eggrider-trip-analyzer {
+        font-size: 1.8rem;
+       }
+       }
     </style>
     """,
     unsafe_allow_html=True
@@ -550,7 +555,7 @@ if not df.empty:
     }
     </style>
     <div class="footer">
-       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v.1.2.
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.3
     </div>
     """,
     unsafe_allow_html=True
