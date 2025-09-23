@@ -1,6 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import folium, datetime
+from streamlit_folium import st_folium
+from folium.plugins import Fullscreen
 import streamlit as st
 import numpy as np
 from streamlit.components.v1 import html
@@ -20,51 +22,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-def fullscreen_html(html_code):
-    return """
-            <style>
-            .st-btn {
-                background-color: #fff;
-                color: #000;
-                border: 2px solid rgba(0, 0, 0, 0.2);
-                border-radius: 2px;
-                text-align: center;
-                font-size: 22px;
-                cursor: pointer;
-                width: 40px;
-                height: 40px;
-                font-weight: bold;
-                line-height: 28px;
-                position: absolute;
-                z-index: 9999;
-                right: 15px;
-                top: 15px;
-            }
-            .st-btn:hover {
-                background-color: #f0f2f6;
-                border-color: #c0c0c0;
-            }
-            </style>
-            <button class="st-btn" onclick="openFullscreen()">&#x26F6;</button>
-            <div id="map-container" style="width:100%; height:400px; background:lightblue; text-align:center; line-height:400px;">
-                """ + html_code + """
-            </div>
-            <script>
-            function openFullscreen() {
-            var elem = document.getElementById("map-container");
-            if (elem.requestFullscreen) {
-                elem.requestFullscreen();
-            } else if (elem.mozRequestFullScreen) { /* Firefox */
-                elem.mozRequestFullScreen();
-            } else if (elem.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
-                elem.webkitRequestFullscreen();
-            } else if (elem.msRequestFullscreen) { /* IE/Edge */
-                elem.msRequestFullscreen();
-            }
-            }
-            </script>
-            """
 
 def haversine_km(lat1, lon1, lat2, lon2):
         R = 6371.0
@@ -244,6 +201,12 @@ def render_statistics(df):
     div[data-testid="stMetricValue"] {
         font-size: 20px;
     }
+    @media (max-width: 640px) {
+        .stColumn {
+           width: calc(49.6667% - 1rem);
+           flex: 1 1 calc(49.6667% - 1rem);
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -278,6 +241,7 @@ def render_statistics(df):
             st.metric("End Battery", f"{end_battery:.0f} %")  
         if total_battery_percent is not None:
             st.metric("Battery Used", f"{total_battery_percent:.1f} %")
+
 
     # діапазони швидкості (можна змінювати під свої потреби)
     speed_bins = [-0.1, 0, 5, 10, 20, 30, 40, 50, 100]  
@@ -357,19 +321,8 @@ def render_statistics(df):
     power_percent = {k: (v / total_dist * 100 if total_dist > 0 else 0)
                     for k, v in power_distance.items()}
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.write(f"Distance without Motor assist:")
-        st.write(f"Distance with Motor assist:")
-
-    with col2:
-        st.write(f"**{power_distance['0 W']:.2f} km**")
-        st.write(f"**{power_distance['>0 W']:.2f} km**")
-
-    with col3:
-        st.write(f"**{power_percent['0 W']:.1f}%**")
-        st.write(f"**{power_percent['>0 W']:.1f}%**")
-
+    st.write(f"Distance without Motor assist: **{power_distance['0 W']:.2f} km ({power_percent['0 W']:.1f}%)**")
+    st.write(f"Distance with Motor assist: **{power_distance['>0 W']:.2f} km ({power_percent['>0 W']:.1f}%)**")
 
     st.subheader("💪 Assist Usage (%)")
     # assist distribution
@@ -490,7 +443,14 @@ if not df.empty:
 
             folium.Marker(coords[-1], tooltip="End", icon=folium.Icon(color="red", icon="stop")).add_to(trip_map)
 
-            html(fullscreen_html(trip_map._repr_html_()), height=700)
+            Fullscreen(
+                position="topright",      # позиція кнопки (topright, topleft, bottomright, bottomleft)
+                title="Open full screen", # текст підказки
+                title_cancel="Exit full screen", 
+                force_separate_button=True
+            ).add_to(trip_map)
+
+            st_folium(trip_map, width="100%", returned_objects=[])
             st.write(f"Found {len(dfg)} location points.")
             #st.dataframe(dfg)
 
@@ -568,7 +528,7 @@ if not df.empty:
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
-    #st.html("<div>Powered by silentlexx. V.1.1</div>")
+
     st.markdown(
     """
     <style>
@@ -589,7 +549,7 @@ if not df.empty:
     }
     </style>
     <div class="footer">
-       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v.1.1.
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v.1.2.
     </div>
     """,
     unsafe_allow_html=True
