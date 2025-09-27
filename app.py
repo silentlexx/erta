@@ -6,6 +6,7 @@ from folium.plugins import Fullscreen
 import streamlit as st
 import numpy as np
 from math import radians, sin, cos, sqrt, atan2
+import altair as alt
 
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
 st.title("🚲 Eggrider Trip Analyzer")
@@ -34,61 +35,13 @@ def haversine_km(lat1, lon1, lat2, lon2):
         a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
         return R * 2 * atan2(sqrt(a), sqrt(1-a))
 
-def clean_gps_data(df, lat_col="Latitude", lon_col="Longitude", speed_col="Speed(km/h)", time_col="Time(HH:mm:ss.fff)"):
-    df = df.copy()
-  
-    max_speed_kmh = df[speed_col].max()
-    max_speed_mps = max_speed_kmh / 3.6  # convert to m/s
-    
-    # 1. Час → timedelta (секунди від початку доби)
-    times = pd.to_timedelta(df[time_col])
-    secs = times.dt.total_seconds().to_numpy()
-
-    # 2. Обробка переходів через північ
-    day_offset = 0
-    offsets = np.zeros(len(secs))
-    prev = secs[0]
-    for i in range(1, len(secs)):
-        if secs[i] < prev:
-            day_offset += 86400
-        offsets[i] = day_offset
-        prev = secs[i]
-
-    df["time_s"] = secs + offsets
-
-    # 3. Відстань між точками (метри)
-    lats = df[lat_col].to_numpy()
-    lons = df[lon_col].to_numpy()
-    ts = df["time_s"].to_numpy()
-    dists = [0]
-    delta_s = [0]
-    for i in range(1, len(df)):
-       try:
-            dists.append(haversine_km(lats[i-1], lons[i-1], lats[i], lons[i]) * 1000)
-            delta_s.append(ts[i] - ts[i-1])
-       except:
-            dists.append(0)
-            delta_s.append(0)
-    df["dist_m"] = dists
-    df["dt_s"] = delta_s
-
-    max_delta_s = df["dt_s"].mean() 
-    max_jump_m = max_speed_mps * max_delta_s * 50 # FIXME: 50 - empirical factor
-    if max_jump_m < 100:
-        max_jump_m = 100
-
-    # 5. Маска:
+def clean_gps_data(df, lat_col="Latitude", lon_col="Longitude", accuracy=10):
     mask = (
-        #(df[speed_col] <= max_speed_kmh) &      # не нереальна швидкість
-        (df["dist_m"] > 0) &
-        (df["dist_m"] <= max_jump_m)             # не великий стрибок
-        #(df[speed_col] > 1) 
-        #~((df["dist_m"] < min_move_m) & (df["speed_kmh"] < min_speed_kmh)) # прибираємо "тремтіння"
+        df["AccuracyPosition(m)"] < accuracy
     )
 
     df_clean = df[mask].reset_index(drop=True)
 
-    # 6. Згладжування (ковзне середнє на 5 точок)
     df_clean[lat_col] = df_clean[lat_col].rolling(window=5, center=True, min_periods=1).mean()
     df_clean[lon_col] = df_clean[lon_col].rolling(window=5, center=True, min_periods=1).mean()
 
@@ -199,6 +152,14 @@ def render_statistics(df):
     total_battery_percent = df["BatteryPercentage"].max() - df["BatteryPercentage"].min() if "BatteryPercentage" in df.columns else None 
     battery_per_km = (total_battery_percent / total_distance) if total_battery_percent and total_distance > 0 else None
 
+    min_temp = df["DisplayTemp(C)"].min()
+    max_temp = df["DisplayTemp(C)"].max()
+    avg_temp = df["DisplayTemp(C)"].mean()
+
+    alt_min = df["Altitude(m)"].where(df["Altitude(m)"] > 0).min()
+    alt_max = df["Altitude(m)"].max()
+    alt_diff = alt_max - alt_min
+
     df["DistancePercentage"] = df["Distance(km)"].diff().clip(lower=0).fillna(0)
 
     st.markdown("""
@@ -216,7 +177,7 @@ def render_statistics(df):
     </style>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
     with col1:
         st.metric("Total Distance", f"{total_distance:.2f} km")
         st.metric("Total Time", f"{format_hms(total_time)}")
@@ -247,6 +208,20 @@ def render_statistics(df):
             st.metric("End Battery", f"{end_battery:.0f} %")  
         if total_battery_percent is not None:
             st.metric("Battery Used", f"{total_battery_percent:.1f} %")
+    with col7:
+        if min_temp:
+            st.metric("Min Temperature", f"{min_temp:.1f} °C")
+        if max_temp:
+            st.metric("Max Temperature", f"{max_temp:.1f} °C")
+        if avg_temp:
+            st.metric("Avg Temperature", f"{avg_temp:.1f} °C")
+    with col8:
+        if alt_min:
+            st.metric("Altitude Min", f"{alt_min:.1f} m")
+        if alt_max:
+            st.metric("Altitude Max", f"{alt_max:.1f} m")
+        if alt_diff:
+            st.metric("Altitude Diff", f"{alt_diff:.1f} m")
 
 
     # діапазони швидкості (можна змінювати під свої потреби)
@@ -438,7 +413,7 @@ if not df.empty:
     # create tabs
     tabs = st.tabs([
         "📊 Statistics",
-        "📈 Graphs",
+        "📈 Chart",
         "🗺️ Map",
         "𝄜 Data",
     ])
@@ -455,11 +430,11 @@ if not df.empty:
         st.dataframe(df, height=780)
         st.write(f"Found {len(df)} records.")    
 
-    # ============= ROUTE ==================
+    # ============= MAP ==================
     with tabs[2]:
         st.header("🗺️ Route on map")
-        dfg = reduce_points_by_distance(clean_gps_data(df))
-        if not dfg.empty:
+        df = reduce_points_by_distance(clean_gps_data(df))
+        if not df.empty:
 
             marker_range = st.slider(
                 "⏺ Select distance between markers (m)",
@@ -469,24 +444,23 @@ if not df.empty:
                 step=10
             )
 
-            start_coords = (dfg["Latitude"].iloc[0], dfg["Longitude"].iloc[0])
+            start_coords = (df["Latitude"].iloc[0], df["Longitude"].iloc[0])
             trip_map = folium.Map(location=[df["Latitude"].mean(), df["Longitude"].mean()], zoom_start=13)
 
-            coords = dfg[["Latitude", "Longitude"]].values.tolist()
+            coords = df[["Latitude", "Longitude"]].values.tolist()
             folium.PolyLine(coords, color="blue", weight=3).add_to(trip_map)
             folium.Marker(coords[0], tooltip="Start", icon=folium.Icon(color="green", icon="play")).add_to(trip_map)
 
             if marker_range > 0:
-                # --- додавання маркерів кожні 100 м ---
                 distance_accum = 0
-                next_marker = 100  # перший маркер через 100 м
+                next_marker = 0  
                 for i in range(1, len(coords)):
                     lat1, lon1 = coords[i-1]
                     lat2, lon2 = coords[i]
                     dist = haversine_km(lat1, lon1, lat2, lon2) * 1000  # відстань між точками
                     distance_accum += dist
                     if distance_accum >= next_marker:
-                        row = dfg.iloc[i]
+                        row = df.iloc[i]
                         tooltip_text = (
                             f"📍 {next_marker} m<br>"
                             f"🚴 Speed: {row['Speed(km/h)']:.1f} km/h<br>"
@@ -502,7 +476,7 @@ if not df.empty:
                             color = "green"
                         folium.CircleMarker([lat2, lon2],
                                     tooltip=tooltip_text, radius=radius, color=color, fill=True, fill_opacity=0.8).add_to(trip_map)
-                        next_marker += marker_range  # наступна ціль через 100 м
+                        next_marker += marker_range  
 
             folium.Marker(coords[-1], tooltip="End", icon=folium.Icon(color="red", icon="stop")).add_to(trip_map)
 
@@ -514,85 +488,68 @@ if not df.empty:
             ).add_to(trip_map)
 
             st_folium(trip_map, width="100%", returned_objects=[])
-            st.write(f"Found {len(dfg)} location points.")
-            #st.dataframe(dfg)
+            st.write(f"Found {len(df)} location points.")
 
-    # ============= SPEED + POWER ==================
+    # ============= CHART ==================
     with tabs[1]:
-        st.header("📈 Graphs")
-       # ============= SPEED + POWER ==================
-        st.subheader("⚡ Speed & Power")
-        fig, ax1 = plt.subplots()
+        st.header("📈 Chart")
 
-        ax1.plot(df["Distance(km)"], df["Speed(km/h)"], label="Speed (km/h)", color="blue")
-        ax1.plot(df["Distance(km)"], df["SpeedGPS(km/h)"], label="GPS Speed (km/h)", color="green", alpha=0.6)
-        ax1.set_ylabel("Speed (km/h)", color="blue")
-        ax1.legend()
+        df["MotorPower(W/10)"] = df["MotorPower(W)"] / 10.0
+        df["AssistLevel"] = df["AssistLevel"] * 10
 
+        cols_available = [
+        "Speed(km/h)", 
+        "SpeedGPS(km/h)", 
+        "MotorPower(W/10)", 
+        "Current(A)", 
+        "Voltage(V)", 
+        "BatteryPercentage", 
+        "AssistLevel",
+        "DisplayTemp(C)"
+        ]
 
-        ax2 = ax1.twinx()
-        ax2.plot(df["Distance(km)"], df["MotorPower(W)"], label="Motor Power (W)", color="red", alpha=0.6)
-        ax2.set_ylabel("Power (W)", color="red")
+        def_cols =[
+        "Speed(km/h)", 
+        "MotorPower(W/10)", 
+        "BatteryPercentage", 
+        "AssistLevel"
+        ]
 
-        ax1.set_xlabel("Distance (km)")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+        selected_cols = []
+        with st.expander("⚙️ Select parameters to plot"):
+            for c in cols_available:
+                if st.checkbox(c, value=(c in def_cols)):
+                    selected_cols.append(c)
 
-    # ============= VOLTAGE / CURRENT ==================
+        if selected_cols:
+            # перетворюємо у long формат для Altair
+            df_long = df.melt(id_vars=["Distance(km)"], 
+                            value_vars=selected_cols, 
+                            var_name="Parameter", 
+                            value_name="Value")
+            
+            chart = (
+                alt.Chart(df_long)
+                .mark_line()
+                .encode(
+                    x=alt.X("Distance(km):Q", title="Distance (km)"),
+                    y=alt.Y("Value:Q"),
+                    color="Parameter:N",
+                    tooltip=["Distance(km)", "Parameter", "Value"]
+                )
+                .interactive() 
+                .properties(
+                    height=800
+                )
+            )
 
-        st.subheader("🔋 Voltage & Current")
-        fig, ax1 = plt.subplots()
-
-        ax1.plot(df["Distance(km)"], df["Voltage(V)"], color="orange", label="Voltage (V)")
-        ax1.set_ylabel("Voltage (V)", color="orange")
-        ax1.set_ylim(41, 54)
-
-        ax2 = ax1.twinx()
-        ax2.plot(df["Distance(km)"], df["Current(A)"], color="red", label="Current (A)", alpha=0.6)
-        ax2.set_ylabel("Current (A)", color="red")
-
-        ax1.set_xlabel("Distance (km)")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
-    # ============= ASSIST / POWER ==================
-
-        st.subheader("💪 Assist Level & Power")
-        fig, ax1 = plt.subplots()
-
-        ax1.plot(df["Distance(km)"], df["AssistLevel"], label="PAS Level", color="brown")
-        ax1.set_ylabel("Assist Level", color="brown")
-        ax1.set_ylim(0, 9)
-
-
-        ax2 = ax1.twinx()
-        ax2.plot(df["Distance(km)"], df["MotorPower(W)"], label="Motor Power (W)", color="red", alpha=0.6)
-        ax2.set_ylabel("Power (W)", color="red")
-
-        ax1.set_xlabel("Distance (km)")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
-    # ============= ASSIST / SPEED ==================
-
-        st.subheader("🚀 Assist Level & Speed")
-        fig, ax1 = plt.subplots()
-
-        ax1.plot(df["Distance(km)"], df["AssistLevel"], label="PAS Level", color="brown")
-        ax1.set_ylabel("Assist Level", color="brown")
-        ax1.set_ylim(0, 9)
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("☝️ Select at least one parameter to display chart")
 
 
-        ax2 = ax1.twinx()
-        ax2.plot(df["Distance(km)"], df["Speed(km/h)"], label="Motor Power (W)", color="blue", alpha=0.9)
-        ax2.set_ylabel("Speed (km/h)", color="blue")
 
-        ax1.set_xlabel("Distance (km)")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
-
-    st.markdown(
+st.markdown(
     """
     <style>
     .footer {
@@ -612,7 +569,7 @@ if not df.empty:
     }
     </style>
     <div class="footer">
-       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.4
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.5
     </div>
     """,
     unsafe_allow_html=True
