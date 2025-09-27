@@ -5,7 +5,6 @@ from streamlit_folium import st_folium
 from folium.plugins import Fullscreen
 import streamlit as st
 import numpy as np
-from streamlit.components.v1 import html
 from math import radians, sin, cos, sqrt, atan2
 
 st.set_page_config(layout="centered", page_icon="🚲", page_title="Eggrider Trip Analyzer")
@@ -129,14 +128,15 @@ def parse_time_column(df, time_col="Time(HH:mm:ss.fff)"):
     secs = times.dt.total_seconds().to_numpy()
 
     # handle day rollovers (00:00:00)
-    day_offset = 0
-    offsets = np.zeros(len(secs))
-    prev = secs[0]
-    for i in range(1, len(secs)):
-        if secs[i] < prev:  # next day
-            day_offset += 86400
-        offsets[i] = day_offset
-        prev = secs[i]
+    #day_offset = 0
+    #offsets = np.zeros(len(secs))
+    #prev = secs[0]
+    #for i in range(1, len(secs)):
+    #    if secs[i] < prev:  # next day
+    #        day_offset += 86400
+    #    offsets[i] = day_offset
+    #    prev = secs[i]
+    offsets = 0
 
     base_date = pd.Timestamp("2000-01-01")
     ts = base_date + pd.to_timedelta(secs + offsets, unit="s")
@@ -345,16 +345,73 @@ def render_statistics(df):
     if wh_per_km is not None:
         st.write(f"Specific Consumption: **{wh_per_km:.1f} Wh/km**")
 
+def fix_incorect_distance(df, dist_col="Distance(km)"):
+    corrected = []
+    offset = 0
+    prev_raw = df[dist_col].iloc[0]
+    prev_corr = df[dist_col].iloc[0]
+
+    for val in df[dist_col]:
+        # новий сегмент (Distance скинувся)
+        if val < prev_raw:
+            offset += prev_corr
+
+        # кориговане значення
+        new_val = val + offset
+
+        # видалення локальних максимумів: якщо зменшилось → тягнемо попереднє
+        if new_val < prev_corr:
+            new_val = prev_corr
+
+        corrected.append(new_val)
+        prev_raw = val
+        prev_corr = new_val
+
+    df["Distance(km)"] = corrected
+    return df    
+
+def fix_multi_df(df, dist_col="Distance(km)"):
+    #df = df.sort_values("Time(HH:mm:ss.fff)").reset_index(drop=True)
+
+    corrected = []
+    offset = 0
+    prev = df[dist_col].iloc[0]
+
+    for val in df[dist_col]:
+        # якщо значення зменшилось → це новий сегмент
+        if val < prev:
+            offset += prev  # додаємо максимум попереднього сегменту
+        corrected.append(val + offset)
+        prev = val
+
+    df["Distance(km)"] = corrected
+    return df
+
 # ----------------------------
 # UI
 # ----------------------------
 
-uploaded_file = st.file_uploader("Upload CSV from Eggrider", type=["csv"])
+uploaded_files = st.file_uploader("Upload CSV from Eggrider", type=["csv"], accept_multiple_files=True)
 
-if uploaded_file is not None:
+dfs = []
+
+if uploaded_files:
+    uploaded_files = sorted(uploaded_files, key=lambda x: x.name)
     # якщо користувач завантажив свій файл
-    df = pd.read_csv(uploaded_file, sep=";", skiprows=1)
-    #st.success("✅ File uploaded successfully!")
+    for f in uploaded_files:
+        try:
+            fl = f.readline().decode("utf-8").strip()
+            if "sep=;" in fl:
+                d = pd.read_csv(f, sep=";")
+            else:
+                f.seek(0)
+                d = pd.read_csv(f)
+            dfs.append(d)
+        except Exception as e:
+            pass
+        
+if dfs:
+    df = fix_multi_df(pd.concat(dfs, ignore_index=True))
 else:
     # fallback: завантажуємо демо-дані з диску
     demo_path = "demo.csv"   # шлях до вашого demo-файлу
@@ -555,7 +612,7 @@ if not df.empty:
     }
     </style>
     <div class="footer">
-       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.3
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.4
     </div>
     """,
     unsafe_allow_html=True
