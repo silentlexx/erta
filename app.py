@@ -280,8 +280,8 @@ def render_statistics(df):
         "1001-1200 W",
     ]
 
-    if max_power > 1000:
-        labels.append(f">1000-{int(max_power)} W")
+    if max_power > 1200:
+        labels.append(f">1200-{int(max_power)} W")
 
     # категоризація з параметром duplicates="drop"
     df["PowerRange"] = pd.cut(
@@ -309,6 +309,10 @@ def render_statistics(df):
     # assist distribution
     assist_percent = df["AssistLevel"].value_counts(normalize=True).sort_index() * 100
     st.bar_chart(assist_percent)
+
+    #dist_by_power = df.groupby("PowerRange")["DistancePercentage"].sum()
+    #dist_percent = dist_by_power / dist_by_power.sum() * 100  
+
 
     st.subheader("🔋 Energy Consumption")
     if battery_per_km is not None:
@@ -467,11 +471,15 @@ if not df.empty:
                             f"⚡ Motor Power: {row['MotorPower(W)']:.0f} W<br>"
                             f"🔋 Voltage: {row['Voltage(V)']:.1f} V<br>"
                             f"🔋 Battery: {row['BatteryPercentage']:.0f}%<br>"
-                            f"🤖 Assist: {row['AssistLevel']}"
+                            f"🤖 Assist: {row['AssistLevel']}<br>"
+                            f"🚙 OffRoad Mode: {row['OffRoadMode']}"
                         )
-                        radius = (int(row["AssistLevel"]) / 4) + 1
+                        radius = (int(row["AssistLevel"]) / 4) + 1 + (int(row["OffRoadMode"] * 2))
                         if row["MotorPower(W)"] > 0: 
-                            color = "red" 
+                           if row["OffRoadMode"] == 1:
+                               color = "brown" 
+                           else:
+                               color = "red"
                         else:
                             color = "green"
                         folium.CircleMarker([lat2, lon2],
@@ -496,6 +504,7 @@ if not df.empty:
 
         df["MotorPower(W/10)"] = df["MotorPower(W)"] / 10.0
         df["AssistLevel"] = df["AssistLevel"] * 10
+        df["OffRoadMode"] = df["OffRoadMode"] * 100
 
         cols_available = [
         "Speed(km/h)", 
@@ -505,6 +514,7 @@ if not df.empty:
         "Voltage(V)", 
         "BatteryPercentage", 
         "AssistLevel",
+        "OffRoadMode",
         "DisplayTemp(C)"
         ]
 
@@ -569,7 +579,7 @@ st.markdown(
     }
     </style>
     <div class="footer">
-       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.5
+       2025 © Powered by <a href='mailto:silentlexx@gmail.com'>Silentlexx</a>. v1.6
     </div>
     """,
     unsafe_allow_html=True
